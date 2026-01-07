@@ -1,6 +1,9 @@
 //! Data shared between program runtime and built-in programs as well as SBF programs.
 #![deny(clippy::indexing_slicing)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![allow(deprecated)]
+#![allow(unknown_lints)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 #[cfg(feature = "dev-context-only-utils")]
 use qualifier_attr::qualifiers;
@@ -572,7 +575,7 @@ impl TransactionContext {
 
                 // Potentially unshare / make the account shared data unique (CoW logic).
                 if stricter_abi_and_runtime_constraints && account_data_direct_mapping {
-                    region.host_addr = account.data_as_mut_slice().as_mut_ptr() as u64;
+                    region.host_addr = account.data_as_mut_slice().as_mut_ptr() as usize;
                     region.writable = true;
                 }
             },

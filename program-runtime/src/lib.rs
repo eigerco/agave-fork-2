@@ -1,6 +1,7 @@
 #![cfg_attr(feature = "frozen-abi", feature(min_specialization))]
 #![deny(clippy::arithmetic_side_effects)]
 #![deny(clippy::indexing_slicing)]
+#![allow(deprecated)]
 
 pub use solana_sbpf;
 pub mod execution_budget;

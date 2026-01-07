@@ -644,6 +644,8 @@ crossbeam-epoch = { git = "https://github.com/anza-xyz/crossbeam", rev = "fd279d
 # for details, see https://github.com/anza-xyz/agave/issues/8262
 quinn = { git = "https://github.com/anza-xyz/quinn", rev = "fc4decb0cf79b1b210603294e96849d67e9c22e2" }
 quinn-proto = { git = "https://github.com/anza-xyz/quinn", rev = "fc4decb0cf79b1b210603294e96849d67e9c22e2" }
+# Patched sbpf with 32-bit host address support for RISC0 zkVM
+solana-sbpf = { path = "../sbpf" }
 
 # We include the following crates as our dependencies above from crates.io:
 #
