@@ -156,6 +156,7 @@ edition = "2021"
 
 [workspace.lints.rust]
 warnings = "deny"
+mismatched_lifetime_syntaxes = "allow"
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"

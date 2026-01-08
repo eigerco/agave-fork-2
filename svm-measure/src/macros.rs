@@ -106,11 +106,22 @@ macro_rules! measure_us {
 // The macro name, `meas_dur`, is "measure" + "duration".
 // When said aloud, the pronunciation is close to "measure".
 #[macro_export]
+#[cfg(not(target_os = "zkvm"))]
 macro_rules! meas_dur {
     ($expr:expr) => {{
         let start = std::time::Instant::now();
         let result = $expr;
         (result, start.elapsed())
+    }};
+}
+
+// On zkVM, time is not available, so return zero duration
+#[macro_export]
+#[cfg(target_os = "zkvm")]
+macro_rules! meas_dur {
+    ($expr:expr) => {{
+        let result = $expr;
+        (result, std::time::Duration::ZERO)
     }};
 }
 
