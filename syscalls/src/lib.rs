@@ -12,9 +12,23 @@ pub use self::{
         SyscallGetSysvar,
     },
 };
+
+// Re-exports for zkVM custom syscall implementations
+pub use solana_sbpf::{declare_builtin_function, memory_region::MemoryMapping};
+pub use solana_program_runtime::invoke_context::InvokeContext;
+pub use solana_secp256k1_recover::{
+    Secp256k1RecoverError, SECP256K1_PUBLIC_KEY_LENGTH, SECP256K1_SIGNATURE_LENGTH,
+};
+pub use solana_keccak_hasher as keccak_hasher;
+pub use solana_program_entrypoint::SUCCESS;
 #[allow(deprecated)]
 use {
     crate::mem_ops::is_nonoverlapping,
+    solana_sbpf::{
+        memory_region::AccessType,
+        program::{BuiltinProgram, SBPFVersion},
+        vm::Config,
+    },
     solana_account_info::AccountInfo,
     solana_big_mod_exp::{big_mod_exp, BigModExpParams},
     solana_blake3_hasher as blake3,
@@ -28,23 +42,13 @@ use {
     solana_hash::Hash,
     solana_instruction::{error::InstructionError, AccountMeta, ProcessedSiblingInstruction},
     solana_keccak_hasher as keccak, solana_poseidon as poseidon,
-    solana_program_entrypoint::{BPF_ALIGN_OF_U128, MAX_PERMITTED_DATA_INCREASE, SUCCESS},
+    solana_program_entrypoint::{BPF_ALIGN_OF_U128, MAX_PERMITTED_DATA_INCREASE},
     solana_program_runtime::{
         execution_budget::{SVMTransactionExecutionBudget, SVMTransactionExecutionCost},
-        invoke_context::InvokeContext,
         stable_log,
     },
     solana_pubkey::{Pubkey, PubkeyError, MAX_SEEDS, MAX_SEED_LEN, PUBKEY_BYTES},
-    solana_sbpf::{
-        declare_builtin_function,
-        memory_region::{AccessType, MemoryMapping},
-        program::{BuiltinProgram, SBPFVersion},
-        vm::Config,
-    },
     solana_sdk_ids::{bpf_loader, bpf_loader_deprecated, native_loader},
-    solana_secp256k1_recover::{
-        Secp256k1RecoverError, SECP256K1_PUBLIC_KEY_LENGTH, SECP256K1_SIGNATURE_LENGTH,
-    },
     solana_sha256_hasher::Hasher,
     solana_svm_feature_set::SVMFeatureSet,
     solana_svm_log_collector::{ic_logger_msg, ic_msg},
@@ -126,7 +130,8 @@ pub enum SyscallError {
     ArithmeticOverflow,
 }
 
-type Error = Box<dyn std::error::Error>;
+/// Error type used by syscalls
+pub type Error = Box<dyn std::error::Error>;
 
 trait HasherImpl {
     const NAME: &'static str;
@@ -279,7 +284,8 @@ impl<T> VmSlice<T> {
     }
 }
 
-fn consume_compute_meter(invoke_context: &InvokeContext, amount: u64) -> Result<(), Error> {
+/// Consume compute units from the meter
+pub fn consume_compute_meter(invoke_context: &InvokeContext, amount: u64) -> Result<(), Error> {
     invoke_context.consume_checked(amount)?;
     Ok(())
 }
@@ -617,7 +623,8 @@ fn translate_type<'a, T>(
     translate_type_inner!(memory_mapping, AccessType::Load, vm_addr, T, check_aligned)
         .map(|value| &*value)
 }
-fn translate_slice<'a, T>(
+/// Translate a virtual slice pointer to a host slice (read-only)
+pub fn translate_slice<'a, T>(
     memory_mapping: &'a MemoryMapping,
     vm_addr: u64,
     len: u64,
@@ -658,8 +665,8 @@ fn translate_type_mut<'a, T>(
 ) -> Result<&'a mut T, Error> {
     translate_type_inner!(memory_mapping, AccessType::Store, vm_addr, T, check_aligned)
 }
-// Do not use this directly
-fn translate_slice_mut<'a, T>(
+/// Translate a virtual slice pointer to a host slice (mutable)
+pub fn translate_slice_mut<'a, T>(
     memory_mapping: &'a MemoryMapping,
     vm_addr: u64,
     len: u64,
