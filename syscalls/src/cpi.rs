@@ -62,6 +62,12 @@ fn translate_slice_mut<'a, T>(
     )
 }
 
+/// Returns the address of `T` of `Rc<RefCell<T>>`
+fn rc_refcell_content_addr(rc_refcell_addr: u64) -> u64 {
+    // Rc<RefCell<T>> layout: Rc.strong (8) + Rc.weak (8) + RefCell.borrow (8) = 24 bytes
+    rc_refcell_addr.saturating_add(24)
+}
+
 /// Host side representation of AccountInfo or SolAccountInfo passed to the CPI syscall.
 ///
 /// At the start of a CPI, this can be different from the data stored in the
@@ -190,8 +196,8 @@ impl<'a> CallerAccount<'a> {
                 return Err(SyscallError::InvalidPointer.into());
             }
 
-            // Double translate data out of RefCell using VmSlice for 32-bit host compatibility
-            let data_slice = translate_type::<VmSlice<u8>>(
+            // Double translate data out of RefCell
+            let data = *translate_type::<&[u8]>(
                 memory_mapping,
                 account_info.data.as_ptr() as *const _ as u64,
                 check_aligned,
@@ -199,7 +205,7 @@ impl<'a> CallerAccount<'a> {
             if stricter_abi_and_runtime_constraints {
                 check_account_info_pointer(
                     invoke_context,
-                    data_slice.ptr(),
+                    data.as_ptr() as u64,
                     account_metadata.vm_data_addr,
                     "data",
                 )?;
@@ -207,8 +213,7 @@ impl<'a> CallerAccount<'a> {
 
             consume_compute_meter(
                 invoke_context,
-                data_slice
-                    .len()
+                (data.len() as u64)
                     .checked_div(invoke_context.get_execution_cost().cpi_bytes_per_unit)
                     .unwrap_or(u64::MAX),
             )?;
@@ -224,11 +229,11 @@ impl<'a> CallerAccount<'a> {
                 }
             }
             let ref_to_len_in_vm = translate_type_mut::<u64>(memory_mapping, vm_len_addr, false)?;
-            let vm_data_addr = data_slice.ptr();
+            let vm_data_addr = data.as_ptr() as u64;
             let serialized_data = CallerAccount::get_serialized_data(
                 memory_mapping,
                 vm_data_addr,
-                data_slice.len(),
+                data.len() as u64,
                 stricter_abi_and_runtime_constraints,
                 invoke_context.account_data_direct_mapping,
             )?;
@@ -246,6 +251,8 @@ impl<'a> CallerAccount<'a> {
     }
 
     // Create a CallerAccount given a VmAccountInfo (for Rust CPI with 32-bit host compatibility).
+    //
+    // This is a modification of `from_account_info` but uses `VmAccountInfo` for 32-bit host compatibility.
     fn from_vm_account_info(
         invoke_context: &InvokeContext,
         memory_mapping: &MemoryMapping<'_>,
@@ -273,14 +280,13 @@ impl<'a> CallerAccount<'a> {
             )?;
         }
 
-        // Double translate lamports out of Rc<RefCell<&mut u64>>
-        // lamports_cell_addr is the Rc's internal pointer = RcBox address
-        // RcBox layout: strong (8) + weak (8) + RefCell (borrow 8 + value 8)
-        // Total offset to inner &mut u64 pointer: 16 + 8 = 24 bytes
+        // account_info points to host memory. The addresses used internally are
+        // in vm space so they need to be translated.
         let lamports = {
+            // Double translate lamports out of RefCell
             let ptr = translate_type::<u64>(
                 memory_mapping,
-                account_info.lamports_cell_addr.saturating_add(24u64), // Skip RcBox header + borrow
+                rc_refcell_content_addr(account_info.lamports_cell_addr),
                 check_aligned,
             )?;
             if stricter_abi_and_runtime_constraints {
@@ -310,13 +316,11 @@ impl<'a> CallerAccount<'a> {
                 return Err(SyscallError::InvalidPointer.into());
             }
 
-            // Double translate data out of Rc<RefCell<&mut [u8]>> using VmSlice
-            // data_cell_addr is the Rc's internal pointer = RcBox address
-            // RcBox layout: strong (8) + weak (8) + RefCell (borrow 8 + VmSlice 16)
-            // Total offset to inner VmSlice: 16 + 8 = 24 bytes
+            // Double translate data out of RefCell.
+            // Use `VmSlice<u8>` instead of `&[u8]` for 32bits compatibility.
             let data_slice = translate_type::<VmSlice<u8>>(
                 memory_mapping,
-                account_info.data_cell_addr.saturating_add(24u64), // Skip RcBox header + borrow
+                rc_refcell_content_addr(account_info.data_cell_addr),
                 check_aligned,
             )?;
             if stricter_abi_and_runtime_constraints {
@@ -336,10 +340,15 @@ impl<'a> CallerAccount<'a> {
                     .unwrap_or(u64::MAX),
             )?;
 
-            // vm_len_addr = data_cell_addr + 16 (RcBox) + 8 (borrow) + 8 (ptr) = 32
-            let vm_len_addr = account_info.data_cell_addr.saturating_add(32u64);
-            if stricter_abi_and_runtime_constraints && vm_len_addr >= ebpf::MM_INPUT_START {
-                return Err(SyscallError::InvalidPointer.into());
+            let vm_len_addr = rc_refcell_content_addr(account_info.data_cell_addr)
+                .saturating_add(size_of::<u64>() as u64);
+            if stricter_abi_and_runtime_constraints {
+                // In the same vein as the other check_account_info_pointer() checks, we don't lock
+                // this pointer to a specific address but we don't want it to be inside accounts, or
+                // callees might be able to write to the pointed memory.
+                if vm_len_addr >= ebpf::MM_INPUT_START {
+                    return Err(SyscallError::InvalidPointer.into());
+                }
             }
             let ref_to_len_in_vm = translate_type_mut::<u64>(memory_mapping, vm_len_addr, false)?;
             let vm_data_addr = data_slice.ptr();
@@ -667,7 +676,7 @@ struct SolAccountInfo {
     executable: bool,
 }
 
-/// Rust representation of the Rust SDK AccountInfo in VM memory.
+/// Rust representation of `AccountInfo` in VM memory.
 /// This struct has explicit u64 fields for 32-bit host compatibility.
 /// The layout matches the 64-bit BPF VM's AccountInfo layout (#[repr(C)]).
 #[derive(Debug)]
