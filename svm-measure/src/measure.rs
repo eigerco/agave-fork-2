@@ -1,8 +1,70 @@
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
+use std::{fmt, time::Duration};
 
+// On zkVM targets, we can't use Instant::now() because time is not available.
+// We provide a no-op implementation that doesn't track real time.
+#[cfg(target_os = "zkvm")]
+#[derive(Debug)]
+pub struct Measure {
+    name: &'static str,
+    duration: u64,
+}
+
+#[cfg(target_os = "zkvm")]
+impl Measure {
+    pub fn start(name: &'static str) -> Self {
+        Self { name, duration: 0 }
+    }
+
+    pub fn stop(&mut self) {
+        // No-op on zkVM - we can't measure time
+    }
+
+    pub fn as_ns(&self) -> u64 {
+        self.duration
+    }
+
+    pub fn as_us(&self) -> u64 {
+        self.duration / 1000
+    }
+
+    pub fn as_ms(&self) -> u64 {
+        self.duration / (1000 * 1000)
+    }
+
+    pub fn as_s(&self) -> f32 {
+        self.duration as f32 / (1000.0f32 * 1000.0f32 * 1000.0f32)
+    }
+
+    pub fn as_duration(&self) -> Duration {
+        Duration::from_nanos(self.as_ns())
+    }
+
+    pub fn end_as_ns(self) -> u64 {
+        0
+    }
+
+    pub fn end_as_us(self) -> u64 {
+        0
+    }
+
+    pub fn end_as_ms(self) -> u64 {
+        0
+    }
+
+    pub fn end_as_s(self) -> f32 {
+        0.0
+    }
+
+    pub fn end_as_duration(self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+// On non-zkVM targets, use the real Instant-based implementation
+#[cfg(not(target_os = "zkvm"))]
+use std::time::Instant;
+
+#[cfg(not(target_os = "zkvm"))]
 #[derive(Debug)]
 pub struct Measure {
     name: &'static str,
@@ -10,6 +72,7 @@ pub struct Measure {
     duration: u64,
 }
 
+#[cfg(not(target_os = "zkvm"))]
 impl Measure {
     pub fn start(name: &'static str) -> Self {
         Self {

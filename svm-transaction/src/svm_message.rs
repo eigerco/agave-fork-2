@@ -1,3 +1,5 @@
+#![allow(mismatched_lifetime_syntaxes)]
+
 use {
     crate::{
         instruction::SVMInstruction, message_address_table_lookup::SVMMessageAddressTableLookup,

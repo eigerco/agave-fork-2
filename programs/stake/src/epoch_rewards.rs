@@ -9,6 +9,7 @@ use {
     },
 };
 
+#[allow(deprecated)]
 pub fn add_genesis_account(genesis_config: &mut GenesisConfig) -> u64 {
     let data = vec![0; EpochRewards::size_of()];
     let lamports = std::cmp::max(genesis_config.rent.minimum_balance(data.len()), 1);
